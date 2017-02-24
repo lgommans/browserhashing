@@ -3,7 +3,7 @@
 \usepackage{parskip}
 \usepackage[hidelinks,
 	pdftitle={Additional Security by Hashing Passwords in Browsers},
-	pdfauthor={Luc Gommans, <insert your name here, in no particular order yet>}
+	pdfauthor={Luc Gommans}
 	]{hyperref}
 \usepackage{xcolor}
 \usepackage{graphicx}
@@ -12,43 +12,70 @@
 \usepackage{float}
 \floatstyle{boxed} 
 \restylefloat{figure}
+\frenchspacing
 
 \newcommand{\code}[1]{\texttt{\colorbox{gray!11}{#1}}}
 
 \begin{document}
 \title{Additional Security by Hashing Passwords in Browsers}
-\author{Luc Gommans, [insert your name here, in no particular order yet]}
+\author{By \href{https://lgms.nl}{Luc Gommans}}
 
-\begin{titlepage}
 \maketitle
-\end{titlepage}
+
+Draft, version 0.2.
 
 \section*{Abstract}
 
-This paper discusses a proposal to hash passwords in the browser, as a security measure
-additional to hashing server-side. This layer will prevent leaking passwords in a variety of
-scenarios which are discussed in section 1. Passwords should receive additional protection
-client-side as long as there are users that re-use passwords on multiple websites, or users
-that remember their passwords since that limits their agility in changing passwords upon
-compromise. Algorithms that should be used by browsers will be discussed in section 2.
-Section 3 discusses the HTML interface that should be provided to developers. In section 4 we
-identify a consequence of the system proposed in section 2 and exploit it to further improve
-security. We conclude with an overview of the proposal.
+This paper proposes hashing passwords in the browser, as a security measure additional to
+hashing server-side. This will prevent leaking passwords in a variety of scenarios which are
+discussed in section 1. Passwords should receive additional protection client-side as long as
+there are users that re-use passwords on multiple websites, or users that remember their
+passwords since that limits their agility in changing passwords upon compromise. Algorithms
+that should be used by browsers will be discussed in section 2. Section 3 discusses the HTML
+interface that should be provided to developers. In section 4 we identify a consequence of
+the system proposed in section 2 and exploit it to further improve security. We conclude with
+an overview of the proposal.
 
 \section{Threat model}
 
-This system will protects against:
+People often reuse passwords, or even if they use a unique password, remember the password
+rather than using a password manager. This has disadvantages in the event of password
+compromises. It is best practice to use special password hashing algorithms to prevent
+attackers from being able to obtain the original password. Still, there have been various
+events in the past where plaintext passwords were compromised due to transport layer security
+(TLS) being the only protection. It is often argued that the server needs to be trustworthy
+anyway: if the server is not trusted, it would simply serve you a web page which does not
+hash your password.
 
-- Heartbleed
-- Cloudflare-like shit
-- passive attackers, such as one after TLS termination (see NSA before Google encrypted their
-back-end)
-- active attackers that don't want to be too high-profile or don't have the skills. (me when
-I was 14 years old)
-- weak password hashing on the server
+This paper proposes to hash passwords client-side despite the aforementioned required trust
+of the server. This will protect against:
 
-It does not protect against anyone who can change the code or has the means and motive to
-MITM the page and change its contents.
+\begin{itemize}
+\item vulnerabilities such as
+% Had to inline Heartbleed, can't do two \footnotemarks without \footnotetext in between
+Heartbleed\footnote{\href{https://en.wikipedia.org/wiki/Heartbleed}{\underline{\smash{en.wikipedia.org/wiki/Heartbleed}}}}
+and Cloudbleed\footnote{{\href{https://en.wikipedia.org/wiki/Cloudbleed}{\underline{\smash{en.wikipedia.org/wiki/Cloudbleed}}}}} where server memory was accidentally leaked;
+
+\item protect against passive attackers which attack websites without TLS encryption, or
+websites that use early TLS termination\footnotemark; and
+
+\item weak or no password hashing on the server.
+\end{itemize}
+
+\footnotetext{Early TLS Termination is a technique where TLS traffic is decrypted by a
+\href{https://en.wikipedia.org/wiki/TLS\_termination\_proxy}{\underline{\smash{TLS
+termination proxy}}} before it reaches its destination, usually at the edge of a private
+network, after which it is assumed to be secure. A well known example of abuse of this
+scenario is the NSA's tapping of Google's private network
+(\href{http://www.androidauthority.com/ssl-added-removed-google-mocks-nsa-crypto-code-easter-egg-390162/}{\underline{\smash{more info}}}).}
+
+One attack it does not protect against is pass-the-hash. For this reason it is still
+recommended to hash passwords server-side, regardless of whether passwords are hashed
+client-side.
+
+In section 4 it is described how the proposed solution can also partially protect against an
+untrustworthy server, for example in the even of phishing, and man-in-the-middle attacks with
+active adversaries (as opposed to mere passive interception).
 
 \section{Choice of algorithms}
 
@@ -63,62 +90,141 @@ with \code{www.} included and one without, and it might change over time. Becaus
 service identifier needs to be supplied by the developers. This will be discussed further in
 section 3. The risks and benefits of service identifiers will be discussed in section 4.
 
-so, a kdf, which provides the salt input to a normal password hashing algorithms. I think
-pbkdf2, bcrypt, scrypt and argon2 are all good candidates. Parameters should be chosen so
-they can work on mobile devices without a hitch (under 200ms of computational lag, I would
-say). For the KDF, any old (password) hashing algorithm can be used as long as we protect
-against hash length extension attacks for merkle-dåmgard constructions. Not sure that's even
-relevant here, but why the hell not.
+A salt needs to be unique, but is not secret nor does it matter if it can be reversed. A fast
+hashing algorithm can be used for this purpose. For version 1, the KDF algorithm is an HMAC
+of the service identifier and the username, in that order.
 
-We will probably want to discuss versioning here, since work parameters (e.g. bcrypt's)
-should be upgraded every few years. Not quite sure yet how to do this, and where to lay the
-responsibility. Browsers will be part of the responsibility of course, but we should avoid
-complicated upgrade schemes where the browser needs to submit the old and the new version for
-a long time until everyone has been upgraded.
+\code{KDF = HMAC(service-identifier, username)}
+
+HMAC is used as defined in RFC 2104\footnotemark. The underlying hashing algorithm to be used is SHA-256.
+The inputs are encoded as UTF-8.
+
+\footnotetext{\href{https://tools.ietf.org/html/rfc2104}{\underline{\smash{tools.ietf.org/html/rfc2104}}}
+HMAC}
+
+The hashing algorithm to be used for password hashing is PBKDF2, as defined in RFC
+2898\footnotemark, with an iteration count of 30 000 and derived key length of 32 bytes (64
+hexadecimal characters). The iteration count is based on it taking just below 200
+milliseconds on a reasonably modern mobile phone: quick enough to not be very noticeable on
+the vast majority of devices and, given that it is not an action that needs to be performed
+often, acceptable on slower devices.
+
+\footnotetext{\href{https://tools.ietf.org/html/rfc2898\#section-5.1}{\underline{\smash{tools.ietf.org/html/rfc2898\#section-5.1}}}
+PBKDF2}
+
+\subsection{Upgrading the algorithm}
+
+As computers get faster and cryptography advances, the algorithm will have to be replaced
+at some point in the future. Unfortunately no well-reviewed password hashing algorithm
+supports seamless upgrades, where the iteration count can be upgraded without requiring user
+input. Rather than proposing a completely new password hashing algorithm, we use an existing
+one (pbkdf2) and provide an upgrade scheme.
+
+To upgrade to a new version, an option can be specified which causes the browser to send both
+the new and the old hash to the server, in that order. They are separated by a dollar symbol.
+When upgrading from version 1 to version 2, this results in the following string:
+
+\code{hashed\$v2\$2b00042f7481c7b056c4b\$hashed\$v1\$b60ca610c6aa34ccb0f7}
+
+The option to be specified is defined in section 3.
 
 \section{HTML API}
 
-Should be easy to use and easy to upgrade. Must not be possible to misuse by developers.
+The HTML API for this feature consists of four new attributes for the \code{input} element
+with type \code{password}.
 
-Overall, I have something like this in mind:
+\begin{itemize}
+\item \code{hash} is required and contains the version to be used. Currently only version 1
+is valid, denoted as \code{v1}.
+\item \code{username-field} is required and should point to the \code{name} of the username
+field in the same form.
+\item \code{service} is required and should be set to the service for which the client is
+encrypting a hash. It is recommended to use your service's domain name here, e.g.
+\code{example.com}. Elsewhere in the document, this parameter is referred to as the service
+identifier.
+\item \code{upgrade-from} can be used to upgrade an older version. Legal values are all legal
+values for the \code{hash} attribute. When specified, the browser must send both the new and
+the old version, in that order.
+\end{itemize}
 
-\code{<input name=MyUserName>} \\
-\code{<input type=password name=password hash=v1 service=example.org} \\
-\code{ username=MyUserName>} \\
-\code{<input type=sumit>}
+If an unknown version is specified, the browser must issue a warning and should fall back to
+the nearest known version, preferring the higher value in case of a tie. If a required
+attribute is missing or if \code{username-field} does not point to an existing field, the
+browser must issue a warning and should send the string \code{error-hashing!} concatenated
+with a random alphanumeric string of eight characters.
 
-The browser would then use the service, username field value, and the password value to
-derive a salt. The \code{hash=v1} part uniquely identifies an algorithm and work factor,
-since we want the output to be static. The version and format are sent to the server somehow,
-e.g. \code{hashed\$v1\$2b00042f7481c7b056c4b}.
+The reason for sending a random string is to make certain that the server cannot possibly
+process the data correctly. If we would omit the field, languages such as PHP would issue a
+NOTICE-level warning (often not shown) and continue with an empty string. If we would fill
+the field with only a static string, users might all register and be able to sign in with
+{\it any} password, since they all turn into the same, static string.
 
-If the output would be dynamic, e.g. the work factor is included in the data sent to the
-server and this factor is variable, it would require changes on the registration and login
-code. Now it only requires \code{if (\$\_POST[password][0:9] == 'hashed\$v1\$')} to
-distinguish between an old-style and a new-style login.
+The reason for not providing defaults for the required fields is because specifying the
+\code{hash} field indicates that the developer intends to better secure the page. If a
+mistake is made which would (partially) compromise this security, it is considered better to
+fail rather than to silently weaken the security.
 
-\section{Unintended effects}
+This results in the following example HTML form. Note that this is the same for both
+registering and logging in.
+
+\code{<form method=post action="/login">} \\
+\code{Username: <input name=MyUsername>} \\
+\code{Password: <input type=password name=MyPassword hash=v1} \\
+\code{ service=example.org username=MyUsername>} \\
+\code{<input type=submit>} \\
+\code{</form>}
+
+On the server side, the \code{MyUsername} field is unaltered. The \code{MyPassword} field
+contains a string in the following format:
+
+\code{hashed\$version\$hash}
+
+where \code{hashed} is literal; \code{version} is the value from the \code{hash} attribute;
+and \code{hash} is 64 hexadecimal characters. For example:
+
+\code{hashed\$v1\$202d6132b2d2a469607f093dfef14e0f4798956dacbffe615453e00} \\
+\code{8d190c861}
+
+Browsers which do not support these attributes will not react to the specification of any of
+the parameters and send the password in plain text instead. This can be detected because the
+value submitted to the server does not begin with \code{hashed\$v1\$}.
+
+Browsers must detect this. If an unhashed password is submitted, it should hash the password
+as the browser should have done and continue as normal.
+
+Example implementations are provided in the source code repository at \\
+{\href{https://github.com/lgommans/browserhashing}{\underline{\smash{github.com/lgommans/browserhashing}}}}.
+
+\section{Additional effects}
 
 Allowing the website to supply the service identifier, rather than deriving it from the
-domain or TLS certificate, allows attackers to supply the service identifier of their
+domain or other semi-static field, allows attackers to supply the service identifier of their
 intended targets. For example, a phishing website which tries to obtain logins for Reddit
 would supply the same identifier as Reddit does.
 
 Rather than being a risk, this can be used to improve security: duplicate service
-identifiers can be logged to a public ledger. Reddit could have a bot monitor their service
-identifier to spot impostors before the first victim was even able to enter their password.
+identifiers can be logged to a public ledger. Reddit could ask the ledger to be notified when
+a duplicate is discovered, allowing them to spot impostors before the first victim was even
+able to enter their password.
 
-Additionally, browsers might issue visible warnings to users, along the lines of "hey, this
-website uses the same identifier as [original domain], are you sure about this?". This does
-provide UX challenges and is a future step which we will leave out of scope in this paper.
+Browsers could also issue visible warnings to users, notifying them that this website on
+domain X attempts to obtain their password for this other website from domain Y, and asking
+whether they want to continue. This does provide UX challenges and is a future step which is
+out of scope for this paper.
+
+Finally, once many websites adopted this scheme, browsers could issue a warning similar to
+the one given on HTTP pages with a password field if a website does not use it. This forces
+websites to use it if they do not want to be marked as insecure, which means phishing
+websites must also do it. Combined with the aforementioned duplicate service identifier
+detection, this would be an effective measure against phishing.
 
 \section*{Conclusion}
 
-Brief overview of proposed solution and why it will help.
+TODO: Brief overview of proposed solution and why it will help.
 
-%\begin{thebibliography}{1}
-%\bibitem{citekey} {\it Perfecting the Art of Sensible Nonsense.} (2010, January 1). Retrieved June 1, 2016, from {\href{https://www.example.org/}{\underline{\smash{https://www.example.org}}}}
-%\end{thebibliography}
+\section*{Acknowledgements}
+
+Many thanks for early feedback from Khaled Nassar, Paul Cornelissen, Koen Tange and Bart Erven.
 
 \end{document}
 
