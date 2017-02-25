@@ -22,13 +22,13 @@
 
 \maketitle
 
-Status: draft, version 0.3.
+Status: draft, version 0.4.
 
 \section*{Abstract}
 
 This paper proposes hashing passwords in the browser, as a security measure additional to
 hashing server-side. Since users re-use passwords and do not universally use a password
-manager (making it hard to change passwords upon compromise), passwords should never leaving
+manager (making it hard to change passwords upon compromise), passwords should never leave
 a user's device unprotectd. Hashing in browsers will prevent leaking passwords in a variety
 of scenarios which are discussed in section 1. The algorithm to be used by browsers will be
 discussed in section 2. Section 3 discusses the HTML interface which is to be be provided to
@@ -39,13 +39,24 @@ concludes with an overview of the proposal.
 \section{Threat model}
 
 People often reuse passwords, or even if they use a unique password, remember the password
-rather than using a password manager. This has disadvantages in the event of password
-compromises. It is best practice to use special password hashing algorithms to prevent
-attackers from being able to obtain the original password. Still, there have been various
-events in the past where plaintext passwords were compromised due to transport layer security
-(TLS) being the only protection. It is often argued that the server needs to be trustworthy
-anyway: if the server is not trusted, it would simply serve you a web page which does not
-hash your password.
+rather than using a password manager. This makes passwords hard to change in the event of a
+compromised website.
+
+It is best practice to use password hashing algorithms when storing passwords in a database,
+which prevents attackers from being able to obtain the original password if the database is
+compromised. Still, there have been various events in the past where plaintext passwords were
+compromised due to transport layer security (TLS) being the only protection, or due to bad
+password hashing on the server's side (or even none at all). Passwords should never leave a
+device unprotected and client-side hashing will additionally show users that this website
+will store their password in a secured way.
+
+If client-side hashing was implemented, the server would be the entity which sends the
+(Javascript) instructions to do so. If the server was compromised or otherwise not trusted,
+it would not be sending your browser instructions to hash the password. Therefore web
+developers used to argue that client-side hashing added no value over TLS: if the server is
+untrusted, you would not trust its Javascript; and if the server is trusted, there is no
+point in hashing either because you trust it to handle your login correctly. As attacks such
+as Cloudbleed show, this is a false presumption.
 
 This paper proposes to hash passwords client-side despite the aforementioned required trust
 of the server. This will protect against:
@@ -83,12 +94,14 @@ Passwords should be hashed using a slow algorithm which accepts a salt as input 
 output unique. However, the server will not have a copy of the plaintext of the password,
 making it impossible to use a standard technique.
 
-To generate the salt, we need to use a key derivation function with globally unique inputs.
-A combination of the username, password and website's domain are good candidates as inputs,
-but a website's domain is not necessarily stable. There might be multiple, for example one
-with \code{www.} included and one without, and it might change over time. Because of this, a
-service identifier needs to be supplied by the developers. This will be discussed further in
-section 3. The risks and benefits of service identifiers will be discussed in section 4.
+To generate the salt, we need to use a key derivation function with globally unique inputs. A
+combination of the username and website's domain are good candidates as inputs, but a
+website's domain is not necessarily stable. There might be multiple, for example one with
+\code{www.} included and one without, and it might change over time. Because of this, a
+service identifier needs to be supplied by the developers, which is an identifying string
+reused across all websites that are linked to the same database. Section 3 will explain this
+service identifier further. The risks and benefits of service identifiers will be discussed
+in section 4.
 
 A salt needs to be unique, but is not secret nor does it matter if it can be reversed. A fast
 hashing algorithm can be used for this purpose. For version 1, the KDF algorithm is an HMAC
@@ -219,26 +232,27 @@ intended targets. For example, a phishing website which tries to obtain logins f
 would supply the same identifier as Reddit does.
 
 Rather than being a risk, this can be used to improve security: duplicate service identifiers
-can be logged to a public ledger. Reddit could subscribe itself to the ledger, to be notified
+can be logged to a public log. Reddit could subscribe itself to the log, to be notified
 when duplicates are discovered. This would allow the website to spot domains falsely
 identifying as Reddit before the first victim was even able to enter their password.
 
 In this scenario, it is assumed that the user has visited the website before. If the user
 lands on a phishing page for a website they never visited before, they probably do not have
 credentials to be phished. Basically this is an implicit Trust On First Use-scheme, but
-distributed through all the users of browsers participating in logging to the ledger. This
-ledger could be a project such as Microsoft SmartScreen or Google Safe Browsing.
+distributed through all the users of browsers participating in logging to the public log.
+This log could be a project such as Microsoft SmartScreen or Google Safe Browsing.
 
 Browsers could also issue visible warnings to users, notifying them that this website on
 domain X attempts to obtain their password for this other website from domain Y, and asking
 whether they want to continue. Communicating this clearly does provide UX challenges and is a
 future step which is out of scope for this paper.
 
-Finally, once many websites adopted this scheme, browsers could issue a warning similar to
-the one given on unencrypted HTTP pages with a password field. This forces websites to use
-the scheme if they do not want to be marked as insecure, which means phishing websites must
-also do it. Combined with the aforementioned duplicate service identifier detection, this
-would be an effective measure against phishing.
+Finally, once many websites adopted this scheme, browsers could issue a warning (similar to
+the one given on unencrypted HTTP pages with a password field) when a page has a password
+field that does not include hashing. This forces websites to use the scheme if they do not
+want to be marked as insecure, which means phishing websites must also do it. Combined with
+the aforementioned duplicate service identifier detection, this would be an effective measure
+against phishing.
 
 \section{Future work}
 
@@ -260,8 +274,9 @@ their hashes);
 \item it would allow browser vendors to implement multiple future versions at the same time,
 even if some versions are only meant to be used years ahead, preventing issues with browser
 support for new versions once it is time to upgrade to them; and
-\item it would allow developers that target a specific audience (e.g. one with fast desktops)
-to use versions that are currently too slow for general (e.g. mobile) use.
+\item it would allow developers that target a specific audience to use versions that are
+currently too slow for general (e.g. mobile) use, for example if an internal website is only
+going to be used on desktops, or if security requirements are very strict (e.g. governments).
 \end{enumerate}
 
 \section*{Conclusion}
