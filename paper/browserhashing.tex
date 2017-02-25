@@ -22,19 +22,19 @@
 
 \maketitle
 
-Draft, version 0.2.
+Status: draft, version 0.3.
 
 \section*{Abstract}
 
 This paper proposes hashing passwords in the browser, as a security measure additional to
-hashing server-side. This will prevent leaking passwords in a variety of scenarios which are
-discussed in section 1. Passwords should receive additional protection client-side as long as
-there are users that re-use passwords on multiple websites, or users that remember their
-passwords since that limits their agility in changing passwords upon compromise. Algorithms
-that should be used by browsers will be discussed in section 2. Section 3 discusses the HTML
-interface that should be provided to developers. In section 4 we identify a consequence of
-the system proposed in section 2 and exploit it to further improve security. We conclude with
-an overview of the proposal.
+hashing server-side. Since users re-use passwords and do not universally use a password
+manager (making it hard to change passwords upon compromise), passwords should never leaving
+a user's device unprotectd. Hashing in browsers will prevent leaking passwords in a variety
+of scenarios which are discussed in section 1. The algorithm to be used by browsers will be
+discussed in section 2. Section 3 discusses the HTML interface which is to be be provided to
+web developers. In section 4 consequences of the proposed changes are identified and used to
+further improve security. Finally in section 5 we will discuss future work. The paper
+concludes with an overview of the proposal.
 
 \section{Threat model}
 
@@ -118,15 +118,30 @@ As computers get faster and cryptography advances, the algorithm will have to be
 at some point in the future. Unfortunately no well-reviewed password hashing algorithm
 supports seamless upgrades, where the iteration count can be upgraded without requiring user
 input. Rather than proposing a completely new password hashing algorithm, we use an existing
-one (pbkdf2) and provide an upgrade scheme.
+one (PBKDF2) and provide two possible upgrade schemes.
 
-To upgrade to a new version, an option can be specified which causes the browser to send both
-the new and the old hash to the server, in that order. They are separated by a dollar symbol.
-When upgrading from version 1 to version 2, this results in the following string:
+\subsubsection{Wrapping algorithms}
+
+If the old version is simply too fast and is not considered to introduce any weakness, a new
+version could wrap an old version to make it slower. This has the great advantage for web
+developers that the password database can be upgraded without any user input.
+
+Whether this can be used will depend on the specification of version 2.
+
+\subsubsection{Replacing algorithms}
+
+To completely replace an old algorithm, websites can ask the browser to send both the new and
+the old hash to the server. This allows the website to validate the old hash and, if
+successful, store the new one. The major downside is that this requires every user to log in
+during the transitioning period.
+
+In this event, the browser will send the new version concatenated with the old version,
+separated by a dollar sign. For example, when upgrading from version 1 to version 2, this
+could result in the following string:
 
 \code{hashed\$v2\$2b00042f7481c7b056c4b\$hashed\$v1\$b60ca610c6aa34ccb0f7}
 
-The option to be specified is defined in section 3.
+The exact HTML interface is defined in section 3.
 
 \section{HTML API}
 
@@ -137,7 +152,7 @@ with type \code{password}.
 \item \code{hash} is required and contains the version to be used. Currently only version 1
 is valid, denoted as \code{v1}.
 \item \code{username-field} is required and should point to the \code{name} of the username
-field in the same form.
+field in the same form. It defaults to the value \code{username}.
 \item \code{service} is required and should be set to the service for which the client is
 encrypting a hash. It is recommended to use your service's domain name here, e.g.
 \code{example.com}. Elsewhere in the document, this parameter is referred to as the service
@@ -155,11 +170,12 @@ with a random alphanumeric string of eight characters.
 
 The reason for sending a random string is to make certain that the server cannot possibly
 process the data correctly. If we would omit the field, languages such as PHP would issue a
-NOTICE-level warning (often not shown) and continue with an empty string. If we would fill
-the field with only a static string, users might all register and be able to sign in with
-{\it any} password, since they all turn into the same, static string.
+NOTICE-level warning (often not shown) and continue with an empty string, which would have
+the effect of registering users with empty passwords. If we would fill the field with only a
+static string, users might all register and be able to sign in with {\it any} password, since
+they all turn into the same, static string.
 
-The reason for not providing defaults for the required fields is because specifying the
+The reason for not providing defaults for some required fields is because specifying the
 \code{hash} field indicates that the developer intends to better secure the page. If a
 mistake is made which would (partially) compromise this security, it is considered better to
 fail rather than to silently weaken the security.
@@ -170,12 +186,12 @@ registering and logging in.
 \code{<form method=post action="/login">} \\
 \code{Username: <input name=MyUsername>} \\
 \code{Password: <input type=password name=MyPassword hash=v1} \\
-\code{ service=example.org username=MyUsername>} \\
+\code{ service=example.org username-field=MyUsername>} \\
 \code{<input type=submit>} \\
 \code{</form>}
 
 On the server side, the \code{MyUsername} field is unaltered. The \code{MyPassword} field
-contains a string in the following format:
+contains a string in the following format for version 1:
 
 \code{hashed\$version\$hash}
 
@@ -185,12 +201,12 @@ and \code{hash} is 64 hexadecimal characters. For example:
 \code{hashed\$v1\$202d6132b2d2a469607f093dfef14e0f4798956dacbffe615453e00} \\
 \code{8d190c861}
 
-Browsers which do not support these attributes will not react to the specification of any of
-the parameters and send the password in plain text instead. This can be detected because the
-value submitted to the server does not begin with \code{hashed\$v1\$}.
+Browsers which do not support these attributes will not react to any of the parameters and
+send the password in plain text instead. This can be detected because the value submitted to
+the server does not begin with \code{hashed\$v1\$}.
 
-Browsers must detect this. If an unhashed password is submitted, it should hash the password
-as the browser should have done and continue as normal.
+It is recommended to detect this If an unhashed password is submitted, the server should hash
+the password as the browser should have done and continue as normal.
 
 Example implementations are provided in the source code repository at \\
 {\href{https://github.com/lgommans/browserhashing}{\underline{\smash{github.com/lgommans/browserhashing}}}}.
@@ -202,29 +218,81 @@ domain or other semi-static field, allows attackers to supply the service identi
 intended targets. For example, a phishing website which tries to obtain logins for Reddit
 would supply the same identifier as Reddit does.
 
-Rather than being a risk, this can be used to improve security: duplicate service
-identifiers can be logged to a public ledger. Reddit could ask the ledger to be notified when
-a duplicate is discovered, allowing them to spot impostors before the first victim was even
-able to enter their password.
+Rather than being a risk, this can be used to improve security: duplicate service identifiers
+can be logged to a public ledger. Reddit could subscribe itself to the ledger, to be notified
+when duplicates are discovered. This would allow the website to spot domains falsely
+identifying as Reddit before the first victim was even able to enter their password.
+
+In this scenario, it is assumed that the user has visited the website before. If the user
+lands on a phishing page for a website they never visited before, they probably do not have
+credentials to be phished. Basically this is an implicit Trust On First Use-scheme, but
+distributed through all the users of browsers participating in logging to the ledger. This
+ledger could be a project such as Microsoft SmartScreen or Google Safe Browsing.
 
 Browsers could also issue visible warnings to users, notifying them that this website on
 domain X attempts to obtain their password for this other website from domain Y, and asking
-whether they want to continue. This does provide UX challenges and is a future step which is
-out of scope for this paper.
+whether they want to continue. Communicating this clearly does provide UX challenges and is a
+future step which is out of scope for this paper.
 
 Finally, once many websites adopted this scheme, browsers could issue a warning similar to
-the one given on HTTP pages with a password field if a website does not use it. This forces
-websites to use it if they do not want to be marked as insecure, which means phishing
-websites must also do it. Combined with the aforementioned duplicate service identifier
-detection, this would be an effective measure against phishing.
+the one given on unencrypted HTTP pages with a password field. This forces websites to use
+the scheme if they do not want to be marked as insecure, which means phishing websites must
+also do it. Combined with the aforementioned duplicate service identifier detection, this
+would be an effective measure against phishing.
+
+\section{Future work}
+
+As discussed in section 2.1 (Upgrading the algorithm), upgrades will definitely be necessary
+in the future. The current cost (an iteration count of 30 000) is chosen to err on the low
+side and the algorithm (PBKDF2) is chosen for its widespread support and simplicity, both to
+make sure the proposed feature will not be in the way of usability for users and web
+developers. If it is found that practically no device experiences slowdowns from the proposed
+feature, version 2 of this scheme could drastically increase the cost and perhaps upgrade to
+more complex algorithms, possibly one that is memory-hard as well.
+
+While a second version is being designed, multiple future versions should be designed as
+well. This is for three reasons:
+
+\begin{enumerate}
+\item the upgrade process would be very simple if an old version can simply be upgraded by
+applying extra iterations server-side (as opposed to having to ask users to log in to upgrade
+their hashes);
+\item it would allow browser vendors to implement multiple future versions at the same time,
+even if some versions are only meant to be used years ahead, preventing issues with browser
+support for new versions once it is time to upgrade to them; and
+\item it would allow developers that target a specific audience (e.g. one with fast desktops)
+to use versions that are currently too slow for general (e.g. mobile) use.
+\end{enumerate}
 
 \section*{Conclusion}
 
-TODO: Brief overview of proposed solution and why it will help.
+In this paper we proposed additional attributes to the HTML password input field which
+instruct the browser to hash a user's password. Since all browsers must hash the same way,
+servers can treat the new input as a simple substitute for the original password.
 
-\section*{Acknowledgements}
+Until this feature has widespread support, the only necessary change is to check whether an
+old-style (plaintext) or a new-style (hashed) password was submitted. In the former case, the
+server can hash it like the browser should have done and continue normally.
 
-Many thanks for early feedback from Khaled Nassar, Paul Cornelissen, Koen Tange and Bart Erven.
+One of the proposed attributes is a \code{service} attribute, the service identifier, which
+identifies the service that passwords are being hashed for. This has the function of making a
+hash unique per website.
+
+Websites with multiple domains can use the same service identifier, thereby being able to use
+the same user database without any issues. This has the additional advantage that phishing
+websites, which attempt to obtain logins for other websites, must use the same service
+identifier or the hash they receive will be useless. Browsers could detect different domains
+that use the same service identifier and take action by warning users and submitting the
+domain to projects such as Google Safe Browsing and Microsoft SmartScreen.
+
+The scheme protects against the leakage of plaintext credentials in events such as Heartbleed
+and Cloudbleed; shows users that their passwords are not stored in plain text; and provides
+another measure against phishing attacks.
+
+\section*{Acknowledgments}
+
+Many thanks for early feedback from Khaled Nassar, Paul Cornelissen, Koen Tange, Bart Erven
+and Fr\'ed\'eric Schertenleib.
 
 \end{document}
 
